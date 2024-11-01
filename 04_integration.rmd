@@ -1,0 +1,178 @@
+---
+title: "Integration"
+author: "Lachlan Dryburgh"
+date: "2024-09-03"
+output: html_document
+---
+
+```{r}
+library(edgeR)
+library(VennDiagram)
+library(openxlsx)
+
+comps <- readRDS('../../RNA/output/comps.rds')
+
+atac_peaks <- read.table('../../output/atac_peaks_annot_lfc.bed')
+tt1 <- topTags(comps[[1]],Inf)$table
+tt2 <- topTags(comps[[2]],Inf)$table
+tt3 <- topTags(comps[[3]],Inf)$table
+tt4 <- topTags(comps[[4]],Inf)$table
+
+cpm <- readRDS('../output/cpm.rds')
+
+
+
+
+tt1 <- tt1[rowSums(cpm[rownames(tt1),1:4]>15)>=2,]
+tt2 <- tt2[rowSums(cpm[rownames(tt2),5:8]>15)>=2,]
+tt3 <- tt3[rowSums(cpm[rownames(tt3),9:12]>15)>=2,]
+tt4 <- tt4[rowSums(cpm[rownames(tt4),13:16]>15)>=2,]
+
+satb1_chip <- read.table('../../Satb1_Chip/Satb1_chip_q10_annotated.bed')
+
+atac_x_chip <- read.table('../../Satb1_Chip/Satb1_q10_x_atac.bed')
+
+
+
+```
+
+```{r}
+FDR <- 0.1
+LFC <- 0
+
+tt1 <- tt1[tt1$FDR < FDR & abs(tt1$logFC) > LFC,]
+tt2 <- tt2[tt2$FDR < FDR & abs(tt2$logFC) > LFC,]
+tt3 <- tt3[tt3$FDR < FDR & abs(tt3$logFC) > LFC,]
+tt4 <- tt4[tt4$FDR < FDR & abs(tt4$logFC) > LFC,]
+
+g1 <- rownames(tt1)
+g2 <- rownames(tt2)
+g3 <- rownames(tt3)
+g4 <- rownames(tt4)
+#g5 <- rownames(tt5[tt5$FDR < FDR & abs(tt5$logFC) > LFC,])
+
+deg_ko_any <- unique(c(g1,g2,g3,g4))
+#deg_ko_any <- unique(c(g1,g2,g3,g4,g5))
+
+atac_genes <- unique(atac_peaks$V9)
+chip_genes <- unique(satb1_chip$V14)
+atac_x_chip_genes <- unique(atac_x_chip$V26)
+
+i1 <- intersect(intersect(atac_genes, deg_ko_any),chip_genes)
+
+i2 <- intersect(atac_x_chip_genes, deg_ko_any)
+
+i1[!i1 %in% i2]
+
+venn.diagram(
+  x = list(deg_ko_any, atac_genes, chip_genes),
+  category.names = c("DEG KO" , "ATAC genes", "Chip Genes"),
+  filename = '../output/vennGenes.png',
+  output=TRUE
+)
+
+
+venn.diagram(
+  x = list(atac_x_chip_genes, deg_ko_any),
+  category.names = c("ATACxChIP genes" , "DEG genes"),
+  filename = '../output/vennGenes2.png',
+  output=TRUE
+)
+
+venn.diagram(
+  x = list(atac_x_chip_genes, intersect(atac_genes, chip_genes)),
+  category.names = c("ATACxChIP genes" , "DEG genes"),
+  filename = '../output/vennGenes3.png',
+  output=TRUE
+)
+
+venn.diagram(
+  x = list(deg_ko_any, atac_genes, chip_genes, atac_x_chip_genes),
+  category.names = c("DEG KO" , "ATAC genes", "Chip Genes", "ATAC x ChIP Genes"),
+  filename = '../output/vennGenes4.png',
+  output=TRUE
+)
+
+
+
+write.xlsx(list('ChIPxATACxDEG' = intersect(intersect(atac_genes, deg_ko_any),chip_genes), 'DEG' = deg_ko_any, 'ChIP' = chip_genes, 'ATAC' = atac_genes, 'ChIPxATAC' = intersect(chip_genes, atac_genes), 'ChIPxDEG' = intersect(chip_genes, deg_ko_any), 'ATACxDEG' = intersect(atac_genes, deg_ko_any)), '../output/gene_interesections.xlsx')
+
+deg_ko_any[!deg_ko_any %in% atac_genes]
+```
+```{r}
+upCD101 <- read.csv('../../output/upCD101.csv')
+downCD101 <- read.csv('../../output/downCD101.csv')
+upTPEX <- read.csv('../../output/upTPEX.csv')
+downTPEX <- read.csv('../../output/downTPEX.csv')
+
+upTPEX <- upTPEX[upTPEX$logFC > 1,]
+downTPEX <- downTPEX[downTPEX$logFC < -1,]
+
+up <- unique(upTPEX$gene.id)
+down <- unique(downTPEX$gene.id)
+
+venn.diagram(
+  x = list(deg_ko_any, up, atac_x_chip_genes),
+  category.names = c("DEG KO" , "Tpex genes", "Chip Genes"),
+  filename = '../output/vennTpexUp.png',
+  output=TRUE
+)
+
+intersect(intersect( up, chip_genes),deg_ko_any)
+
+venn.diagram(
+  x = list(deg_ko_any, down,atac_x_chip_genes),
+  category.names = c("DEG KO" , "ATAC Tex genes", "Chip Genes"),
+  filename = '../output/vennTpexDown.png',
+  output=TRUE
+)
+
+
+satb1_tpex <- atac_x_chip[atac_x_chip$V5 %in% upTPEX$Peak.id,]
+satb1_tpex_genes <- satb1_tpex$V26
+
+
+satb1_tex <- atac_x_chip[atac_x_chip$V5 %in% downTPEX$Peak.id,]
+satb1_tex_genes <- satb1_tex$V26
+
+deg_tex <- intersect(satb1_tex_genes, deg_ko_any)
+deg_tpex <- intersect(satb1_tpex_genes,deg_ko_any)
+
+idown <- intersect(down, deg_ko_any)
+length(idown)
+
+length(down)
+length(deg_ko_any)
+
+
+length(deg_tpex)
+
+write.xlsx(list(DEGS = deg_ko_any, TPEX_ATAC = up,  CHIP = chip_genes, CHIPandATAC = intersect(up, chip_genes), CHIPxTPEXATACpeaks = satb1_tpex_genes, CHIPandDEG = intersect(deg_ko_any, chip_genes), TPEXATACandDEG = intersect(deg_ko_any, up), CHIPandATACandDEGS = intersect(intersect(deg_ko_any,up),chip_genes), CHIPxTPEXATACpeaksandDEGS = intersect(satb1_tpex_genes, deg_ko_any)), '../output/tpex_intersect_genes.xlsx')
+
+write.xlsx(list(DEGS = deg_ko_any, TEX_ATAC = down,  CHIP = chip_genes, CHIPandATAC = intersect(down, chip_genes), CHIPxTEXATACpeaks = satb1_tex_genes, CHIPandDEG = intersect(deg_ko_any, chip_genes), TEXATACandDEG = intersect(deg_ko_any, down), CHIPandATACandDEGS = intersect(intersect(deg_ko_any,down),chip_genes), CHIPxTEXATACpeaksandDEGS = intersect(satb1_tex_genes, deg_ko_any)), '../output/tex_intersect_genes.xlsx')
+
+
+i3 <- intersect(atac_genes, chip_genes)
+
+venn.diagram(
+  x = list(i3, up, down),
+  category.names = c("ATACxChIP" , "Tpex ATAC", "Tex ATAC"),
+  filename = '../output/vennGenesIntersect3.png',
+  output=TRUE
+)
+
+venn.diagram(
+  x = list(i3, deg_ko_any, up, down),
+  category.names = c("ATACxChIP", "DEGs" , "Tpex ATAC", "Tex ATAC"),
+  filename = '../output/vennGenesIntersect4.png',
+  output=TRUE
+)
+
+venn.diagram(
+  x = list(atac_x_chip_genes, up, down),
+  category.names = c("ATACxChIP" , "Tpex ATAC", "Tex ATAC"),
+  filename = '../output/vennPeaksIntersect.png',
+  output=TRUE
+)
+```
+

@@ -1,0 +1,659 @@
+---
+
+#
+title: "ATAC"
+author: "Lachlan Dryburgh"
+date: "2024-08-07"
+output: html_document
+---
+
+```{r}
+library(openxlsx)
+library(edgeR)
+library(tidyverse)
+library(ggplot2)
+library(ggrepel)
+
+
+
+#counts <- read.table('../merged_peak_q10.counts', header = T)
+counts <- read.table('../merged_peak.counts', header = T)
+
+names(counts)[1] <- 'Peak.id' 
+counts <- counts[c(2:5, 1, 6:22)]
+names(counts)[7:22]  
+names(counts)[7:22] <- c('10', '11', '12', '13', '1', '14' , '15', '16',  '2', '3', '4', '5', '6', '7', '8', '9') 
+
+
+annot <- read.table('../peaks_annot.bed')
+annot <- annot[c(1:3,5,4,23:27)]
+names(annot) <- c('Chr', 'Start', 'End', 'Peak.id', 'strand', 'gene_chr', 'gene_start', 'gene_end', 'gene.id', 'distance')
+
+
+#annot <- read.table('../merged_q10_annotated.bed')
+#names(annot) <- c('Chr', 'Start', 'End', 'Peak.id', 'strand', 'score', 'sample', 'sample_count',  'gene_chr', 'gene_start', 'gene_end', 'gene.id', 'distance')
+#names(annot)[7:11]<-c('KO1', 'KO2', 'GFP1', 'GFP2', 'GFP3')
+```
+
+```{r}
+dge = DGEList(counts[,c(7:22)], genes = counts$Peak.id)
+
+
+
+dge$samples$sample <- c('10', '11', '12', '13', '1', '14' , '15', '16',  '2', '3', '4', '5', '6', '7', '8', '9') 
+dge$samples$KO <- as.factor(c('Wt', 'Wt', 'Wt', 'KO', 'Wt', 'KO','KO','KO', 'Wt', 'Wt', 'Wt', 'KO','KO','KO','KO', 'Wt'))
+dge$samples$Ex <- as.factor(c('TPEX', 'TEX', 'TEX',  'TPEX',  'TPEX',  'TPEX', 'TEX', 'TEX',  'TPEX', 'TEX','TEX',  'TPEX',  'TPEX', 'TEX', 'TEX',  'TPEX'))
+dge$samples$Type <- as.factor(c('CD62L_neg', 'CX3CR1', 'CD101', 'CD62L_pos', 'CD62L_pos', 'CD62L_neg', 'CX3CR1', 'CD101', 'CD62L_neg', 'CX3CR1', 'CD101', 'CD62L_pos', 'CD62L_neg', 'CX3CR1', 'CD101', 'CD62L_pos'))
+dge$samples$batch <- as.factor(c(2,2,2,2,1,2,2,2,1,1,1,1,1,1,1,2))
+
+dge$samples$group <- paste(dge$samples$Type , dge$samples$KO, sep = '_')
+
+dge = calcNormFactors(dge)
+
+plotMDS(dge)
+```
+```{r}
+pca = prcomp(t(cpm(dge, log=T)))
+
+pca$x %>% as_tibble(rownames = "sample") %>% 
+  mutate(KO = dge$samples$KO) %>% 
+  mutate(EX = dge$samples$Ex) %>% 
+  mutate(Type = dge$samples$Type) %>% 
+  mutate(batch = dge$samples$batch) %>% 
+  mutate(group = dge$samples$group) -> d
+
+ggplot(d,aes(PC1,PC2, color = KO)) +
+  geom_point() + geom_text_repel(aes(label = KO))
+  
+ggplot(d,aes(PC1,PC2, color = EX)) +
+  geom_point() + geom_text_repel(aes(label = EX))
+
+ggplot(d,aes(PC1,PC2, color = Type)) +
+  geom_point() + geom_text_repel(aes(label = Type))
+
+ggplot(d,aes(PC1,PC2, color = batch)) +
+  geom_point() + geom_text_repel(aes(label = batch))
+
+ggplot(d,aes(PC1,PC2, color = group)) +
+  geom_point() + geom_text_repel(aes(label = group))
+```
+```{r}
+cpm <- cpm(dge, log=T)
+
+plot(density(cpm))
+
+df <- gather(as.data.frame(cpm) )
+
+ggplot(df, aes(x= value, color = key)) + 
+  geom_density(bw = 0.1)
+
+mx <- apply(cpm, 1, max, na.rm=TRUE) 
+plot(density(mx)) 
+abline(v = -2)
+
+sum(mx > -1)
+
+
+dge_f <- dge[mx >-1,]
+
+dge_f = calcNormFactors(dge_f)
+```
+```{r}
+cpm_b <- removeBatchEffect(cpm(dge_f, log=T), batch = dge_f$samples$batch)
+pca = prcomp(t(cpm_b))
+
+
+
+pca$x %>% as_tibble(rownames = "sample") %>% 
+  mutate(KO = dge$samples$KO) %>% 
+  mutate(EX = dge$samples$Ex) %>% 
+  mutate(Type = dge$samples$Type) %>% 
+  mutate(batch = dge$samples$batch) %>% 
+  mutate(group = dge$samples$group) -> d
+
+ggplot(d,aes(PC1,PC2, color = KO)) +
+  geom_point() + geom_text_repel(aes(label = KO))
+  
+ggplot(d,aes(PC1,PC2, color = EX)) +
+  geom_point() + geom_text_repel(aes(label = EX))
+
+ggplot(d,aes(PC1,PC2, color = Type)) +
+  geom_point() + geom_text_repel(aes(label = Type))
+
+ggplot(d,aes(PC1,PC2, color = batch)) +
+  geom_point() + geom_text_repel(aes(label = batch))
+
+ggplot(d,aes(PC1,PC2, color = group)) +
+  geom_point() + geom_text_repel(aes(label = group))
+```
+
+
+```{r}
+group <- dge_f$samples$group
+batch <- dge_f$samples$batch
+
+design = model.matrix(~0+group+batch)
+
+v = voom(dge_f, design, plot = T)
+
+fit = lmFit(v, design)
+fit = contrasts.fit(fit, contrasts = makeContrasts("CD62L_posKOvsWt" = "groupCD62L_pos_KO - groupCD62L_pos_Wt",
+                                                   "CD62L_negKOvsWt" = "groupCD62L_neg_KO - groupCD62L_neg_Wt",
+                                                   "TPEX_KOvsWt" = "(groupCD62L_neg_KO + groupCD62L_pos_KO) - (groupCD62L_neg_Wt + groupCD62L_pos_Wt)",
+                                                   "CD101_KOvsWt" = "groupCD101_KO - groupCD101_Wt",
+                                                   "CX3CR1_KOvsWt" = "groupCX3CR1_KO - groupCX3CR1_Wt",
+                                                   "CD101_WtvsCX3CR1_Wt" = "groupCD101_Wt - groupCX3CR1_Wt",
+                                                   "TEX_KOvsWt" = "(groupCX3CR1_KO + groupCD101_KO) - (groupCX3CR1_Wt + groupCD101_Wt)",
+                                                   "TPEX_CD62L_Wt_pos_vs_neg" = "(groupCD62L_pos_Wt - groupCD62L_neg_Wt)",
+                                                   "KOvsWt" = "(groupCD62L_pos_KO + groupCD62L_neg_KO + groupCD101_KO + groupCX3CR1_KO) - (groupCD62L_pos_Wt + groupCD62L_neg_Wt + groupCD101_Wt + groupCX3CR1_Wt)",
+                                                   "TPEXvsTEX" = "(groupCD62L_pos_KO + groupCD62L_neg_KO + groupCD62L_pos_Wt + groupCD62L_neg_Wt) - (groupCD101_KO + groupCX3CR1_KO + groupCD101_Wt + groupCX3CR1_Wt)",
+                                                   "TPEX_Wt_vs_TEX_Wt" = "(groupCD62L_pos_Wt + groupCD62L_neg_Wt) - (groupCD101_Wt + groupCX3CR1_Wt)",
+                                                   "TPEX_KO_vs_TEX_KO" = "(groupCD62L_pos_KO + groupCD62L_neg_KO) - (groupCD101_KO + groupCX3CR1_KO)",
+                                                   "CD101_Wt_vs_Wt" = "groupCD101_Wt*3 - (groupCX3CR1_Wt + groupCD62L_neg_Wt + groupCD62L_pos_Wt)",
+                                                   "CX3CR1_Wt_vs_Wt" = "groupCX3CR1_Wt*3 - (groupCD101_Wt + groupCD62L_neg_Wt + groupCD62L_pos_Wt)",
+                                                   "CD62L_neg_Wt_vs_Wt" = "groupCD62L_neg_Wt*3 - (groupCD101_Wt + groupCX3CR1_Wt + groupCD62L_pos_Wt)",
+                                                   "CD62L_pos_Wt_vs_Wt" = "groupCD62L_pos_Wt*3 - (groupCD101_Wt + groupCX3CR1_Wt + groupCD62L_neg_Wt)",
+                                                   levels = design))
+
+fit = eBayes(fit)
+
+summary(decideTests(fit,adjust.method = 'BH', p.value = 0.05), ncol = 5)
+summary(decideTests(fit,adjust.method = 'none'), ncol = 12)
+
+
+
+tt <- topTable(fit, coef = 9, number = Inf)
+names(tt)[1] <- "Peak.id"
+
+peaks_up <- tt[tt$logFC > 1 & tt$adj.P.Val < 0.1, 'Peak.id']
+peaks_down <- tt[tt$logFC < -1 & tt$adj.P.Val < 0.1, 'Peak.id']
+
+up <- annot[annot$Peak.id %in% peaks_up,]
+down <- annot[annot$Peak.id %in% peaks_down,]
+both <- annot[!(annot$Peak.id %in% peaks_down) & !(annot$Peak.id %in% peaks_up),]
+
+
+all <- inner_join(annot, tt)
+up_anno <- inner_join(up, tt)
+down_anno <- inner_join(down, tt)
+both_anno <- inner_join(both, tt)
+
+write.table(all, '../output/atac_peaks_annot_lfc.bed',  row.names = F, col.names = F, quote = F, sep = '\t')
+write.table(up[,1:3], '../output/ko_pos_peaks.bed', row.names = F, col.names = F, quote = F, sep = '\t')
+write.table(down[,1:3], '../output/ko_neg_peaks.bed', row.names = F, col.names = F, quote = F, sep = '\t')
+write.table(both, '../output/equal_peaks.bed',  row.names = F, col.names = F, quote = F)
+```
+```{r}
+
+```
+
+```{r}
+write.csv(up_anno, '../output/ko_up_peaks_fdr0_1.csv', row.names = F)
+write.csv(down_anno, '../output/ko_down_peaksfdr0_1.csv', row.names = F)
+
+up_anno[order(up_anno$logFC, decreasing = T),]
+down_anno[order(down_anno$logFC, decreasing = F),]
+
+
+
+```
+```{r}
+
+
+```
+
+```{r}
+tt_CD62_pos<-topTable(fit, coef = 1, number = Inf)
+names(tt_CD62_pos)[1] <- "Peak.id"
+CD62L_pos_KOvsWT <- inner_join(annot, tt_CD62_pos)
+CD62L_pos_KOvsWT <- CD62L_pos_KOvsWT[order(CD62L_pos_KOvsWT$P.Val),]
+write.csv(CD62L_pos_KOvsWT, '../output/ATAC_DA_CD62L_pos_KOvsWT.csv')
+
+tt_CD62_neg<-topTable(fit, coef = 2, number = Inf)
+names(tt_CD62_neg)[1] <- "Peak.id"
+CD62L_neg_KOvsWT <- inner_join(annot, tt_CD62_neg)
+CD62L_neg_KOvsWT <- CD62L_neg_KOvsWT[order(CD62L_neg_KOvsWT$P.Val),]
+write.csv(CD62L_neg_KOvsWT, '../output/ATAC_DA_CD62L_neg_KOvsWT.csv')
+
+
+tt_CD101 <- topTable(fit, coef = 4, number = Inf)
+names(tt_CD101)[1] <- "Peak.id"
+CD101_KOvsWT <- inner_join(annot, tt_CD101)
+CD101_KOvsWT <- CD101_KOvsWT[order(CD101_KOvsWT$P.Val),]
+write.csv(CD101_KOvsWT, '../output/ATAC_DA_CD101_KOvsWT.csv')
+
+
+tt_CX3CR1 <- topTable(fit, coef = 5, number = Inf)
+names(tt_CX3CR1)[1] <- "Peak.id"
+CX3CR1_KOvsWT <- inner_join(annot, tt_CX3CR1)
+CX3CR1_KOvsWT <- CX3CR1_KOvsWT[order(CX3CR1_KOvsWT$P.Val),]
+write.csv(CX3CR1_KOvsWT, '../output/ATAC_DA_CX3CR1_KOvsWT.csv')
+
+
+tt_KOvsWT <- topTable(fit, coef = 9, number = Inf)
+names(tt_KOvsWT)[1] <- "Peak.id"
+KOvsWT <- inner_join(annot, tt_KOvsWT)
+
+
+tt_CD62_Wt <- topTable(fit, coef = 8, number = Inf)
+names(tt_CD62_Wt)[1] <- "Peak.id"
+all_CD62L_pos_vs_neg_Wt <- inner_join(annot, tt_CD62_Wt)
+
+up_CD62L_pos_vs_neg_Wt <- all_CD62L_pos_vs_neg_Wt[all_CD62L_pos_vs_neg_Wt$logFC > 0 & all_CD62L_pos_vs_neg_Wt$adj.P.Val < 0.1,]
+down_CD62L_pos_vs_neg_Wt <- all_CD62L_pos_vs_neg_Wt[all_CD62L_pos_vs_neg_Wt$logFC < 0 & all_CD62L_pos_vs_neg_Wt$adj.P.Val < 0.1,]
+
+tt_TPEXvsTEX_Wt <- topTable(fit, coef = 11, number = Inf)
+names(tt_TPEXvsTEX_Wt)[1] <- "Peak.id"
+
+all_TPEXvsTEX_Wt <- inner_join(annot, tt_TPEXvsTEX_Wt)
+
+up_TPEXvsTEX_Wt <- all_TPEXvsTEX_Wt[all_TPEXvsTEX_Wt$logFC > 1.5 & all_TPEXvsTEX_Wt$adj.P.Val < 0.05,]
+down_TPEXvsTEX_Wt <- all_TPEXvsTEX_Wt[all_TPEXvsTEX_Wt$logFC < -1.5 & all_TPEXvsTEX_Wt$adj.P.Val < 0.05,]
+
+tt_CD101_WtvsCX3CR1_Wt <- topTable(fit, coef = 6, number = Inf)
+names(tt_CD101_WtvsCX3CR1_Wt)[1] <- "Peak.id"
+
+all_CD101_WtvsCX3CR1_Wt <- inner_join(annot, tt_CD101_WtvsCX3CR1_Wt)
+
+up_CD101_WtvsCX3CR1_Wt <- all_CD101_WtvsCX3CR1_Wt[all_CD101_WtvsCX3CR1_Wt$logFC > 1.5 & all_CD101_WtvsCX3CR1_Wt$adj.P.Val < 0.05,]
+down_CD101_WtvsCX3CR1_Wt <- all_CD101_WtvsCX3CR1_Wt[all_CD101_WtvsCX3CR1_Wt$logFC < -1.5 & all_CD101_WtvsCX3CR1_Wt$adj.P.Val < 0.05,]
+
+write.csv(up_CD101_WtvsCX3CR1_Wt, "../output/upCD101.csv")
+write.csv(down_CD101_WtvsCX3CR1_Wt, "../output/downCD101.csv")
+write.csv(up_TPEXvsTEX_Wt, '../output/upTPEX.csv')
+write.csv(down_TPEXvsTEX_Wt, '../output/downTPEX.csv')
+
+
+
+
+write
+openxlsx::write.xlsx(list(up_CD101_WtvsCX3CR1_Wt = up_CD101_WtvsCX3CR1_Wt, down_CD101_WtvsCX3CR1_Wt =down_CD101_WtvsCX3CR1_Wt), '../output/da_TEX_Wt_celltype.xlsx')
+
+openxlsx::write.xlsx(list( up_CD62L_pos_vs_neg_Wt = up_CD62L_pos_vs_neg_Wt, down_CD62L_pos_vs_neg_Wt = down_CD62L_pos_vs_neg_Wt), '../output/da_TPEX_Wt_celltype_fdr0_1.xlsx')
+
+openxlsx::write.xlsx(list(CX3CR1_KOvsWT = CX3CR1_KOvsWT[abs(CX3CR1_KOvsWT$logFC) > 0.5 & CX3CR1_KOvsWT$adj.P.Val < 0.1,], CD101_KOvsWT = CD101_KOvsWT[abs(CD101_KOvsWT$logFC)>0.5 & CD101_KOvsWT$adj.P.Val < 0.1,] ,CD62L_neg_KOvsWT = CD62L_neg_KOvsWT[abs(CD62L_neg_KOvsWT$logFC) > 0.5 & CD62L_neg_KOvsWT$adj.P.Val < 0.1,] ,CD62L_pos_KOvsWT = CD62L_pos_KOvsWT[abs(CD62L_pos_KOvsWT$logFC) > 0.5 & CD62L_pos_KOvsWT$adj.P.Val < 0.1,], KOvsWT = KOvsWT[abs(KOvsWT$logFC) > 0.5 & KOvsWT$adj.P.Val < 0.1,]), '../output/ATAC_DA_FDR0_1.xlsx')
+
+all_TPEXvsTEX_Wt <- all_TPEXvsTEX_Wt[order(all_TPEXvsTEX_Wt$P.Value),]
+all_CD101_WtvsCX3CR1_Wt <- all_CD101_WtvsCX3CR1_Wt[order(all_CD101_WtvsCX3CR1_Wt$P.Value),]
+all_CD62L_pos_vs_neg_Wt <- all_CD62L_pos_vs_neg_Wt[order(all_CD62L_pos_vs_neg_Wt$P.Value),]
+write.xlsx(list(all_CD62L_pos_vs_neg_Wt, all_CD101_WtvsCX3CR1_Wt, all_TPEXvsTEX_Wt), '../output/ATAC_DA_celltype.xlsx')
+
+write.xlsx(list(CD62L_pos_vs_neg_Wt = all_CD62L_pos_vs_neg_Wt[all_CD62L_pos_vs_neg_Wt$adj.P.Val <0.1 & abs(all_CD62L_pos_vs_neg_Wt$logFC) > 0.5,], CD101_WtvsCX3CR1_wt = all_CD101_WtvsCX3CR1_Wt[all_CD101_WtvsCX3CR1_Wt$adj.P.Val < 0.1 & abs(all_CD101_WtvsCX3CR1_Wt$logFC) > 0.5,], TPEXvsTEX_Wt = all_TPEXvsTEX_Wt[all_TPEXvsTEX_Wt$adj.P.Val < 0.1 & abs(all_TPEXvsTEX_Wt$logFC) > 0.5,]), '../output/ATAC_DA_celltype_FDR_0_1.xlsx')
+
+write.xlsx(list(CD62L_pos_vs_neg_Wt = all_CD62L_pos_vs_neg_Wt[all_CD62L_pos_vs_neg_Wt$adj.P.Val <0.05 & abs(all_CD62L_pos_vs_neg_Wt$logFC) > 1.5,], CD101_WtvsCX3CR1_wt = all_CD101_WtvsCX3CR1_Wt[all_CD101_WtvsCX3CR1_Wt$adj.P.Val < 0.05 & abs(all_CD101_WtvsCX3CR1_Wt$logFC) > 1.5 ,], TPEXvsTEX_Wt = all_TPEXvsTEX_Wt[all_TPEXvsTEX_Wt$adj.P.Val < 0.05 & abs(all_TPEXvsTEX_Wt$logFC) > 1.5,]), '../output/ATAC_DA_celltype_FDR_0_05_lfc1_5.xlsx')
+
+write.table(up_CD101_WtvsCX3CR1_Wt[,1:3], '../output/CD101vsCX3CR1_pos_peaks.bed', row.names = F, col.names = F, quote = F, sep = '\t')
+write.table(down_CD101_WtvsCX3CR1_Wt[,1:3], '../output/CD101vsCX3CR1_neg_peaks.bed', row.names = F, col.names = F, quote = F, sep = '\t')
+write.table(up_CD62L_pos_vs_neg_Wt[,1:3], '../output/CD62L_pos_peaks.bed', row.names = F, col.names = F, quote = F, sep = '\t')
+write.table(down_CD62L_pos_vs_neg_Wt[,1:3], '../output/CD62L_neg_peaks.bed', row.names = F, col.names = F, quote = F, sep = '\t')
+write.table(up_TPEXvsTEX_Wt[,1:3], '../output/TPEX_pos_peaks.bed', row.names = F, col.names = F, quote = F, sep = '\t')
+write.table(down_TPEXvsTEX_Wt[,1:3], '../output/TPEX_neg_peaks.bed', row.names = F, col.names = F, quote = F, sep = '\t')
+
+openxlsx::write.xlsx(list(up_TPEXvsTEX_Wt = up_TPEXvsTEX_Wt, down_TPEXvsTEX_Wt = down_TPEXvsTEX_Wt), '../output/da_Wt_TEX_vs_TPEX.xlsx')
+```
+
+
+```{r}
+
+e <- cpm(dge)
+rownames(e) <- dge$genes[,1]
+
+colnames(e) <- dge$samples$group
+
+e1 <- e[up_CD101_WtvsCX3CR1_Wt$Peak.id,]
+
+library(tidyverse)
+library(ggridges)
+df.e1 <- gather(as.data.frame(e1))
+ggplot(df.e1, aes(x = value, y = key)) + geom_density_ridges() + xlim(-1,20)
+ggplot(df.e1, aes(x = value, y = key)) + geom_boxplot() + xlim(0,20)
+
+
+e2 <- e[down_CD101_WtvsCX3CR1_Wt$Peak.id,]
+df.e2 <- gather(as.data.frame(e2))
+ggplot(df.e2, aes(x = value, y = key)) + geom_density_ridges() + xlim(-1,20)
+ggplot(df.e2, aes(x = value, y = key)) + geom_boxplot() + xlim(0,20)
+
+
+e3 <- e[up_TPEXvsTEX_Wt$Peak.id,]
+df.e3 <- gather(as.data.frame(e3))
+ggplot(df.e3, aes(x = value, y = key)) + geom_density_ridges() + xlim(-1,20)
+ggplot(df.e3, aes(x = value, y = key)) + geom_boxplot() + xlim(0,20)
+
+
+e4 <- e[down_TPEXvsTEX_Wt$Peak.id,]
+df.e4 <- gather(as.data.frame(e4))
+ggplot(df.e4, aes(x = value, y = key)) + geom_density_ridges() + xlim(-1,20)
+ggplot(df.e4, aes(x = value, y = key)) + geom_boxplot() + xlim(0,20)
+
+
+```
+
+
+
+
+```{r}
+length(unique(all$Peak.id))
+
+sum(duplicated(all$gene.id))/nrow(all)
+
+#sum(duplicated(atac_chip$V26))/nrow(atac_chip)
+
+names(atac_chip) <- names(all)
+write.csv(atac_chip, '../output/Satb1_chip_x_atac.csv')
+write.table(atac_chip, '../Satb1_Chip/Satb1_chip_x_atac.bed',  row.names = F, col.names = F, quote = F, sep = '\t')
+
+#unique(atac_chip$gene.id)
+unique(atac_chip$gene.id[!duplicated(atac_chip$Peak.id)])
+
+unique(annot[abs(annot$distance) <50,"Peak.id"])
+
+
+```
+
+```{r}
+length(unique(atac_chip$Peak.id))
+length(unique(atac_chip$gene.id))
+
+mp <- read.delim('../macs/merged_peaks.bed')
+```
+
+```{r}
+comps <- readRDS('../RNA/output/comps.rds')
+
+tt1 <- topTags(comps[[1]], n = Inf)$table
+tt2 <- topTags(comps[[2]], n = Inf)$table
+tt3 <- topTags(comps[[3]], n = Inf)$table
+tt4 <- topTags(comps[[4]], n = Inf)$table
+tt5 <- topTags(comps[[5]], n = Inf)$table
+tt6 <- topTags(comps[[6]], n = Inf)$table
+tt7 <- topTags(comps[[7]], n = Inf)$table
+tt8 <- topTags(comps[[8]], n = Inf)$table
+
+genes1 <- rownames(tt1[tt1$FDR < 0.05 & abs(tt1$logFC) > 0.5,])
+genes2 <- rownames(tt2[tt2$FDR < 0.05 & abs(tt2$logFC) > 0.5,])
+genes3 <- rownames(tt3[tt3$FDR < 0.05 & abs(tt3$logFC) > 0.5,])
+genes4 <- rownames(tt4[tt4$FDR < 0.05 & abs(tt4$logFC) > 0.5,])
+genes5 <- rownames(tt5[tt5$FDR < 0.05 & abs(tt4$logFC) > 0.5,])
+genes6 <- rownames(tt6[tt6$FDR < 0.05 & abs(tt4$logFC) > 0.5,])
+genes7 <- rownames(tt7[tt7$FDR < 0.05 & abs(tt4$logFC) > 0.5,])
+genes8 <- rownames(tt8[tt8$FDR < 0.05 & abs(tt4$logFC) > 0.5,])
+
+
+#all_deg_genes <- c(genes1, genes2, genes3, genes4, genes5, genes6,genes7, genes8)
+all_deg_genes <- c(genes1, genes2, genes3, genes4, genes5)
+
+
+annot_filter <- annot[annot$gene.id %in% all_deg_genes,] 
+counts_f <- inner_join(counts, annot_filter, "Peak.id")
+
+
+```
+```{r}
+dge = DGEList(counts_f[,c(7:22)], genes = counts_f$Peak.id)
+
+
+
+dge$samples$sample <- c('10', '11', '12', '13', '1', '14' , '15', '16',  '2', '3', '4', '5', '6', '7', '8', '9') 
+dge$samples$KO <- as.factor(c('Wt', 'Wt', 'Wt', 'KO', 'Wt', 'KO','KO','KO', 'Wt', 'Wt', 'Wt', 'KO','KO','KO','KO', 'Wt'))
+dge$samples$Ex <- as.factor(c('TPEX', 'TEX', 'TEX',  'TPEX',  'TPEX',  'TPEX', 'TEX', 'TEX',  'TPEX', 'TEX','TEX',  'TPEX',  'TPEX', 'TEX', 'TEX',  'TPEX'))
+dge$samples$Type <- as.factor(c('CD62L_neg', 'CX3CR1', 'CD101', 'CD62L_pos', 'CD62L_pos', 'CD62L_neg', 'CX3CR1', 'CD101', 'CD62L_neg', 'CX3CR1', 'CD101', 'CD62L_pos', 'CD62L_neg', 'CX3CR1', 'CD101', 'CD62L_pos'))
+dge$samples$batch <- as.factor(c(2,2,2,2,1,2,2,2,1,1,1,1,1,1,1,2))
+
+dge$samples$group <- paste(dge$samples$Type , dge$samples$KO, sep = '_')
+
+dge = calcNormFactors(dge)
+
+plotMDS(dge)
+```
+```{r}
+pca = prcomp(t(cpm(dge, log=T)))
+
+pca$x %>% as_tibble(rownames = "sample") %>% 
+  mutate(KO = dge$samples$KO) %>% 
+  mutate(EX = dge$samples$Ex) %>% 
+  mutate(Type = dge$samples$Type) %>% 
+  mutate(batch = dge$samples$batch) %>% 
+  mutate(group = dge$samples$group) -> d
+
+ggplot(d,aes(PC1,PC2, color = KO)) +
+  geom_point() + geom_text_repel(aes(label = KO))
+  
+ggplot(d,aes(PC1,PC2, color = EX)) +
+  geom_point() + geom_text_repel(aes(label = EX))
+
+ggplot(d,aes(PC1,PC2, color = Type)) +
+  geom_point() + geom_text_repel(aes(label = Type))
+
+ggplot(d,aes(PC1,PC2, color = batch)) +
+  geom_point() + geom_text_repel(aes(label = batch))
+
+ggplot(d,aes(PC1,PC2, color = group)) +
+  geom_point() + geom_text_repel(aes(label = group))
+```
+
+```{r}
+cpm_b <- removeBatchEffect(cpm(dge, log=T), batch = dge$samples$batch)
+pca = prcomp(t(cpm_b))
+
+
+
+pca$x %>% as_tibble(rownames = "sample") %>% 
+  mutate(KO = dge$samples$KO) %>% 
+  mutate(EX = dge$samples$Ex) %>% 
+  mutate(Type = dge$samples$Type) %>% 
+  mutate(batch = dge$samples$batch) %>% 
+  mutate(group = dge$samples$group) -> d
+
+ggplot(d,aes(PC1,PC2, color = KO)) +
+  geom_point() + geom_text_repel(aes(label = KO))
+  
+ggplot(d,aes(PC1,PC2, color = EX)) +
+  geom_point() + geom_text_repel(aes(label = EX))
+
+ggplot(d,aes(PC1,PC2, color = Type)) +
+  geom_point() + geom_text_repel(aes(label = Type))
+
+ggplot(d,aes(PC1,PC2, color = batch)) +
+  geom_point() + geom_text_repel(aes(label = batch))
+
+ggplot(d,aes(PC1,PC2, color = group)) +
+  geom_point() + geom_text_repel(aes(label = group))
+```
+```{r}
+cpm <- cpm(dge, log=T)
+
+plot(density(cpm))
+
+df <- gather(as.data.frame(cpm) )
+
+ggplot(df, aes(x= value, color = key)) + 
+  geom_density(bw = 0.1)
+
+mx <- apply(cpm, 1, max, na.rm=TRUE) 
+plot(density(mx)) 
+abline(v = 4)
+
+sum(mx > 4)
+
+
+dge_f <- dge[mx > 4,,keep.lib.sizes = F]
+
+dge_f = calcNormFactors(dge_f)
+```
+```{r}
+group <- dge_f$samples$group
+batch <- dge_f$samples$batch
+
+design = model.matrix(~0+group+batch)
+
+v = voom(dge_f, design, plot = T)
+
+fit = lmFit(v, design)
+fit = contrasts.fit(fit, contrasts = makeContrasts("CD62L_posKOvsWt" = "groupCD62L_pos_KO - groupCD62L_pos_Wt",
+                                                   "CD62L_negKOvsWt" = "groupCD62L_neg_KO - groupCD62L_neg_Wt",
+                                                   "TPEX_KOvsWt" = "(groupCD62L_neg_KO + groupCD62L_pos_KO) - (groupCD62L_neg_Wt + groupCD62L_pos_Wt)",
+                                                   "CD101_KOvsWt" = "groupCD101_KO - groupCD101_Wt",
+                                                   "CX3CR1_KOvsWt" = "groupCX3CR1_KO - groupCX3CR1_Wt",
+                                                   "CD101_WtvsCX3CR1_Wt" = "groupCD101_Wt - groupCX3CR1_Wt",
+                                                   "TEX_KOvsWt" = "(groupCX3CR1_KO + groupCD101_KO) - (groupCX3CR1_Wt + groupCD101_Wt)",
+                                                   "TPEX_CD62L_Wt_pos_vs_neg" = "(groupCD62L_pos_Wt - groupCD62L_neg_Wt)",
+                                                   "KOvsWt" = "(groupCD62L_pos_KO + groupCD62L_neg_KO + groupCD101_KO + groupCX3CR1_KO) - (groupCD62L_pos_Wt + groupCD62L_neg_Wt + groupCD101_Wt + groupCX3CR1_Wt)",
+                                                   "TPEXvsTEX" = "(groupCD62L_pos_KO + groupCD62L_neg_KO + groupCD62L_pos_Wt + groupCD62L_neg_Wt) - (groupCD101_KO + groupCX3CR1_KO + groupCD101_Wt + groupCX3CR1_Wt)",
+                                                   "TPEX_Wt_vs_TEX_Wt" = "(groupCD62L_pos_Wt + groupCD62L_neg_Wt) - (groupCD101_Wt + groupCX3CR1_Wt)",
+                                                   "TPEX_KO_vs_TEX_KO" = "(groupCD62L_pos_KO + groupCD62L_neg_KO) - (groupCD101_KO + groupCX3CR1_KO)",
+                                                   "CD101_Wt_vs_Wt" = "groupCD101_Wt*3 - (groupCX3CR1_Wt + groupCD62L_neg_Wt + groupCD62L_pos_Wt)",
+                                                   "CX3CR1_Wt_vs_Wt" = "groupCX3CR1_Wt*3 - (groupCD101_Wt + groupCD62L_neg_Wt + groupCD62L_pos_Wt)",
+                                                   "CD62L_neg_Wt_vs_Wt" = "groupCD62L_neg_Wt*3 - (groupCD101_Wt + groupCX3CR1_Wt + groupCD62L_pos_Wt)",
+                                                   "CD62L_pos_Wt_vs_Wt" = "groupCD62L_pos_Wt*3 - (groupCD101_Wt + groupCX3CR1_Wt + groupCD62L_neg_Wt)",
+                                                   levels = design))
+
+fit = eBayes(fit)
+
+summary(decideTests(fit,adjust.method = 'BH', p.value = 0.05), ncol = 2)
+
+
+
+
+tt <- topTable(fit, coef = 9, number = Inf)
+names(tt)[1] <- "Peak.id"
+```
+
+```{r}
+tt_pos <- topTable(fit, coef =1, number = Inf)
+names(tt_pos)[1] <- "Peak.id"
+pos <- inner_join(annot , tt_pos)
+
+tt_neg <- topTable(fit, coef =2 , number = Inf)
+names(tt_neg)[1] <- "Peak.id"
+neg <- inner_join(annot , tt_neg)
+
+neg[order(neg$adj.P.Val),]
+
+tt_cd101 <- topTable(fit, coef = 3 , number = Inf)
+names(tt_cd101)[1] <- "Peak.id"
+cd101 <- inner_join(annot , tt_cd101)
+
+tt_cx3xr1 <- topTable(fit, coef =4 , number = Inf)
+names(tt_cx3xr1)[1] <- "Peak.id"
+cx3xr1 <- inner_join(annot , tt_cx3xr1)
+
+cx3xr1[order(cx3xr1$adj.P.Val),]
+
+write.xlsx(list(CD62L_pos = pos[pos$adj.P.Val < 0.05 & abs(pos$logFC) > 0.5,], CD62L_neg = neg[neg$adj.P.Val < 0.05 & abs(neg$logFC) > 0.5,], CD101 = cd101[cd101$adj.P.Val < 0.05 & abs(cd101$logFC) > 0.5,], CX3CR1 = cx3xr1[cx3xr1$adj.P.Val < 0.05 & abs(cx3xr1$logFC) > 0.5,]), '../output/ATAC_DA_KO_DEGS_only.xlsx')
+
+
+tt_all_ko <- topTable(fit, coef = 9 , number = Inf)
+names(tt_all_ko)[1] <- "Peak.id"
+all_ko <- inner_join(annot , tt_all_ko, "Peak.id")
+
+all_ko[order(all_ko$adj.P.Val),]
+```
+```{r}
+counts$Peak.id
+
+atac_chip <- read.table('../output/atac_x_chip.bed')
+
+
+counts <- counts[counts$Peak.id %in% atac_chip$V5,]
+dge = DGEList(counts[,c(7:22)], genes = counts$Peak.id)
+
+
+
+dge$samples$sample <- c('10', '11', '12', '13', '1', '14' , '15', '16',  '2', '3', '4', '5', '6', '7', '8', '9') 
+dge$samples$KO <- as.factor(c('Wt', 'Wt', 'Wt', 'KO', 'Wt', 'KO','KO','KO', 'Wt', 'Wt', 'Wt', 'KO','KO','KO','KO', 'Wt'))
+dge$samples$Ex <- as.factor(c('TPEX', 'TEX', 'TEX',  'TPEX',  'TPEX',  'TPEX', 'TEX', 'TEX',  'TPEX', 'TEX','TEX',  'TPEX',  'TPEX', 'TEX', 'TEX',  'TPEX'))
+dge$samples$Type <- as.factor(c('CD62L_neg', 'CX3CR1', 'CD101', 'CD62L_pos', 'CD62L_pos', 'CD62L_neg', 'CX3CR1', 'CD101', 'CD62L_neg', 'CX3CR1', 'CD101', 'CD62L_pos', 'CD62L_neg', 'CX3CR1', 'CD101', 'CD62L_pos'))
+dge$samples$batch <- as.factor(c(2,2,2,2,1,2,2,2,1,1,1,1,1,1,1,2))
+
+dge$samples$group <- paste(dge$samples$Type , dge$samples$KO, sep = '_')
+
+dge = calcNormFactors(dge)
+
+plotMDS(dge)
+```
+```{r}
+pca = prcomp(t(cpm(dge, log=T)))
+
+pca$x %>% as_tibble(rownames = "sample") %>% 
+  mutate(KO = dge$samples$KO) %>% 
+  mutate(EX = dge$samples$Ex) %>% 
+  mutate(Type = dge$samples$Type) %>% 
+  mutate(batch = dge$samples$batch) %>% 
+  mutate(group = dge$samples$group) -> d
+
+ggplot(d,aes(PC1,PC2, color = KO)) +
+  geom_point() + geom_text_repel(aes(label = KO))
+  
+ggplot(d,aes(PC1,PC2, color = EX)) +
+  geom_point() + geom_text_repel(aes(label = EX))
+
+ggplot(d,aes(PC1,PC2, color = Type)) +
+  geom_point() + geom_text_repel(aes(label = Type))
+
+ggplot(d,aes(PC1,PC2, color = batch)) +
+  geom_point() + geom_text_repel(aes(label = batch))
+
+ggplot(d,aes(PC1,PC2, color = group)) +
+  geom_point() + geom_text_repel(aes(label = group))
+```
+
+```{r}
+cpm <- cpm(dge, log=T)
+
+plot(density(cpm))
+
+df <- gather(as.data.frame(cpm) )
+
+ggplot(df, aes(x= value, color = key)) + 
+  geom_density(bw = 0.1)
+
+mx <- apply(cpm, 1, max, na.rm=TRUE) 
+plot(density(mx)) 
+abline(v = -2)
+
+sum(mx > -1)
+
+
+dge_f <- dge[mx >0,,keep.lib.sizes = F]
+
+dge_f = calcNormFactors(dge_f)
+```
+
+```{r}
+group <- dge_f$samples$group
+batch <- dge_f$samples$batch
+
+design = model.matrix(~0+group+batch)
+
+v = voom(dge_f, design, plot = T)
+
+fit = lmFit(v, design)
+fit = contrasts.fit(fit, contrasts = makeContrasts("CD62L_posKOvsWt" = "groupCD62L_pos_KO - groupCD62L_pos_Wt",
+                                                   "CD62L_negKOvsWt" = "groupCD62L_neg_KO - groupCD62L_neg_Wt",
+                                                   "TPEX_KOvsWt" = "(groupCD62L_neg_KO + groupCD62L_pos_KO) - (groupCD62L_neg_Wt + groupCD62L_pos_Wt)",
+                                                   "CD101_KOvsWt" = "groupCD101_KO - groupCD101_Wt",
+                                                   "CX3CR1_KOvsWt" = "groupCX3CR1_KO - groupCX3CR1_Wt",
+                                                   "CD101_WtvsCX3CR1_Wt" = "groupCD101_Wt - groupCX3CR1_Wt",
+                                                   "TEX_KOvsWt" = "(groupCX3CR1_KO + groupCD101_KO) - (groupCX3CR1_Wt + groupCD101_Wt)",
+                                                   "TPEX_CD62L_Wt_pos_vs_neg" = "(groupCD62L_pos_Wt - groupCD62L_neg_Wt)",
+                                                   "KOvsWt" = "(groupCD62L_pos_KO + groupCD62L_neg_KO + groupCD101_KO + groupCX3CR1_KO) - (groupCD62L_pos_Wt + groupCD62L_neg_Wt + groupCD101_Wt + groupCX3CR1_Wt)",
+                                                   "TPEXvsTEX" = "(groupCD62L_pos_KO + groupCD62L_neg_KO + groupCD62L_pos_Wt + groupCD62L_neg_Wt) - (groupCD101_KO + groupCX3CR1_KO + groupCD101_Wt + groupCX3CR1_Wt)",
+                                                   "TPEX_Wt_vs_TEX_Wt" = "(groupCD62L_pos_Wt + groupCD62L_neg_Wt) - (groupCD101_Wt + groupCX3CR1_Wt)",
+                                                   "TPEX_KO_vs_TEX_KO" = "(groupCD62L_pos_KO + groupCD62L_neg_KO) - (groupCD101_KO + groupCX3CR1_KO)",
+                                                   "CD101_Wt_vs_Wt" = "groupCD101_Wt*3 - (groupCX3CR1_Wt + groupCD62L_neg_Wt + groupCD62L_pos_Wt)",
+                                                   "CX3CR1_Wt_vs_Wt" = "groupCX3CR1_Wt*3 - (groupCD101_Wt + groupCD62L_neg_Wt + groupCD62L_pos_Wt)",
+                                                   "CD62L_neg_Wt_vs_Wt" = "groupCD62L_neg_Wt*3 - (groupCD101_Wt + groupCX3CR1_Wt + groupCD62L_pos_Wt)",
+                                                   "CD62L_pos_Wt_vs_Wt" = "groupCD62L_pos_Wt*3 - (groupCD101_Wt + groupCX3CR1_Wt + groupCD62L_neg_Wt)",
+                                                   levels = design))
+
+fit = eBayes(fit)
+
+summary(decideTests(fit,adjust.method = 'BH', p.value = 0.05), ncol = 5)
+summary(decideTests(fit,adjust.method = 'none'), ncol = 12)
+
+
+
+tt <- topTable(fit, coef = 9, number = Inf)
+tt[tt$adj.P.Val < 0.05,]
+```

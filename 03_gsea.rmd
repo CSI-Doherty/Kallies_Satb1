@@ -1,0 +1,479 @@
+---
+title: "02_GO_KEGG"
+author: "Lachlan Dryburgh"
+date: "2024-09-04"
+output: html_document
+---
+
+```{r}
+library(clusterProfiler)
+library(org.Mm.eg.db)
+library(msigdbr)
+library(enrichplot)
+library(DOSE)
+library(edgeR)
+library(ggplot2)
+library(openxlsx)
+comps <- readRDS('../output/comps.rds')
+number <- 10
+lcpm <- 1.2
+set.seed(30092024)
+cpm <- read.csv('../output/cpm.csv', row.names = 1)
+```
+
+
+```{r}
+tt1 <- topTags(comps[[1]], Inf)$table
+
+
+
+tt1 <- tt1[rowSums(cpm[rownames(tt1),1:4]>15)>=2,]
+
+genes1 <- tt1$logFC
+names(genes1) <- rownames(tt1)
+genes1 <- sort(genes1, decreasing = T)
+
+
+gse1 <- gseGO(geneList=genes1, 
+             ont ="ALL", 
+             keyType = "SYMBOL", 
+             #nPerm = 10000, 
+             minGSSize = 3, 
+             maxGSSize = 800, 
+             pvalueCutoff = 0.05, 
+             verbose = TRUE, 
+             OrgDb = org.Mm.eg.db, 
+             pAdjustMethod = "none")
+
+pdf('../figures/CD62LposKOvsWT_go.pdf')
+dotplot(gse1, showCategory=number, split = '.sign', font.size=6)
+dev.off()
+
+#emapplot(pairwise_termsim(gse))
+
+#cnetplot(gse, categorySize="pvalue", color.params = list(foldChange = genes1), showCategory = 10)
+ridgeplot(gse1, showCategory = number, core_enrichment = F)  + theme(axis.text.y = element_text(size = 8))
+```
+```{r}
+ids<-bitr(names(genes1), fromType = "SYMBOL", toType = "ENTREZID", OrgDb='org.Mm.eg.db')
+
+dedup_ids = ids[!duplicated(ids[c("SYMBOL")]),]
+
+genes1.2 <- genes1[names(genes1) %in% dedup_ids$SYMBOL]
+names(genes1.2) <- dedup_ids$ENTREZID 
+genes1.2<-na.omit(genes1.2)
+
+
+kk1 <- gseKEGG(geneList     = genes1.2,
+               organism     = 'mmu',
+               minGSSize    = 3,
+               maxGSSize    = 800,
+               pvalueCutoff = 0.05,
+               pAdjustMethod = "none",
+               keyType       = "ncbi-geneid")
+
+pdf('../figures/CD62LposKOvsWT_kegg.pdf')
+dotplot(kk1, showCategory=number, split = '.sign', font.size=6)
+dev.off()
+
+ridgeplot(kk1, showCategory = number, core_enrichment = F) + theme(axis.text.y = element_text(size = 8))
+```
+```{r}
+mmsig <- msigdbr(species = "Mus musculus", category = 'H')
+
+h <- mmsig %>% dplyr::select(gs_name, gene_symbol)
+
+h1 <- GSEA(genes1, TERM2GENE = h, pAdjustMethod = 'none')
+
+pdf('../figures/CD62LposKOvsWT_hallmark.pdf')
+dotplot(h1, showCategory=number, split = '.sign', font.size=6)
+dev.off()
+
+ridgeplot(h1, showCategory = number, core_enrichment = F) + theme(axis.text.y = element_text(size = 8))
+
+#emapplot(pairwise_termsim(res))
+#cnetplot(res, categorySize="pvalue", color.params = list(foldChange = genes), showCategory = 20)
+```
+
+```{r}
+write.xlsx(list(GO = gse1@result, KEGG = kk1@result, Hallmarks =  h1@result), '../output/CD62L_pos_KOvsWt_pathways.xlsx')
+```
+
+
+
+```{r}
+tt2 <- topTags(comps[[2]], Inf)$table
+
+
+tt2 <- tt2[rowSums(cpm[rownames(tt2),5:8]>15)>=2,]
+
+genes2 <- tt2$logFC
+names(genes2) <- rownames(tt2)
+genes2 <- sort(genes2, decreasing = T)
+
+
+gse2 <- gseGO(geneList=genes2, 
+             ont ="ALL", 
+             keyType = "SYMBOL", 
+             #nPerm = 10000, 
+             minGSSize = 3, 
+             maxGSSize = 800, 
+             pvalueCutoff = 0.05, 
+             verbose = TRUE, 
+             OrgDb = org.Mm.eg.db, 
+             pAdjustMethod = "none")
+
+pdf('../figures/CD62LnegKOvsWT_go.pdf')
+dotplot(gse2, showCategory=number, split = '.sign', font.size=6)
+dev.off()
+
+#emapplot(pairwise_termsim(gse))
+#cnetplot(gse, categorySize="pvalue", color.params = list(foldChange = genes), showCategory = 10)
+
+ridgeplot(gse2, showCategory = number, core_enrichment = F) + theme(axis.text.y = element_text(size = 8))
+```
+```{r}
+ids<-bitr(names(genes2), fromType = "SYMBOL", toType = "ENTREZID", OrgDb='org.Mm.eg.db')
+
+dedup_ids = ids[!duplicated(ids[c("SYMBOL")]),]
+
+genes2.2 <- genes2[names(genes2) %in% dedup_ids$SYMBOL]
+names(genes2.2) <- dedup_ids$ENTREZID 
+genes2.2<-na.omit(genes2.2)
+
+
+kk2 <- gseKEGG(geneList     = genes2.2,
+               organism     = 'mmu',
+               #nPerm        = 10000,
+               minGSSize    = 3,
+               maxGSSize    = 800,
+               pvalueCutoff = 0.05,
+               pAdjustMethod = "none",
+               keyType       = "ncbi-geneid")
+
+pdf('../figures/CD62LnegKOvsWT_kegg.pdf')
+dotplot(kk2, showCategory=number, font.size=6)
+dev.off()
+
+ridgeplot(kk2, showCategory = number, core_enrichment = F) + theme(axis.text.y = element_text(size = 8))
+
+#emapplot(pairwise_termsim(kk2))
+#cnetplot(kk2, categorySize="pvalue", color.params = list(foldChange = genes2), showCategory = 20)
+```
+```{r}
+
+
+mmsig <- msigdbr(species = "Mus musculus", category = 'H')
+
+h <- mmsig %>% dplyr::select(gs_name, gene_symbol)
+
+h2 <- GSEA(genes2, TERM2GENE = h, pAdjustMethod = 'none')
+
+pdf('../figures/CD62LnegKOvsWT_hallmark.pdf')
+dotplot(h2, showCategory=number, split = '.sign', font.size=6)
+dev.off()
+
+#emapplot(pairwise_termsim(res))
+
+#cnetplot(res, categorySize="pvalue", color.params = list(foldChange = genes), showCategory = 10)
+ridgeplot(h2, showCategory = number, core_enrichment = F)
+```
+```{r}
+write.xlsx(list(GO = gse2@result, KEGG = kk2@result, Hallmarks =  h2@result), '../output/CD62L_neg_KOvsWt_pathways.xlsx')
+```
+```{r}
+tt3 <- topTags(comps[[3]], Inf)$table
+
+#genes <- tt3$logFC* -log10(tt3$FDR)
+
+#tt3 <- tt3[tt3$FDR < 0.1,]
+tt3 <- tt3[rowSums(cpm[rownames(tt3),9:12]>15)>=2,]
+
+genes3 <- tt3$logFC
+
+names(genes3) <- rownames(tt3)
+genes3 <- sort(genes3, decreasing = T)
+
+
+gse3 <- gseGO(geneList=genes3, 
+             ont ="ALL", 
+             keyType = "SYMBOL", 
+             #nPerm = 10000, 
+             minGSSize = 3, 
+             maxGSSize = 800, 
+             pvalueCutoff = 0.05, 
+             verbose = TRUE, 
+             OrgDb = org.Mm.eg.db, 
+             pAdjustMethod = "none")
+
+pdf('../figures/CX3CR1KOvsWT_go.pdf')
+dotplot(gse3, showCategory=number, split = '.sign', font.size=6)
+dev.off()
+
+#emapplot(pairwise_termsim(gse))
+#cnetplot(gse, categorySize="pvalue", color.params = list(foldChange = genes), showCategory = 10)
+
+ridgeplot(gse3, showCategory = number, core_enrichment = F) + theme(axis.text.y = element_text(size = 8))
+```
+```{r}
+ids<-bitr(names(genes3), fromType = "SYMBOL", toType = "ENTREZID", OrgDb='org.Mm.eg.db')
+
+dedup_ids = ids[!duplicated(ids[c("SYMBOL")]),]
+
+genes3.2 <- genes3[names(genes3) %in% dedup_ids$SYMBOL]
+names(genes3.2) <- dedup_ids$ENTREZID 
+genes3.2<-na.omit(genes3.2)
+
+
+kk3 <- gseKEGG(geneList     = genes3.2,
+               organism     = 'mmu',
+               #nPerm        = 10000,
+               minGSSize    = 3,
+               maxGSSize    = 800,
+               pvalueCutoff = 0.05,
+               pAdjustMethod = "none",
+               keyType       = "ncbi-geneid")
+
+pdf('../figures/CX3CR1KOvsWT_kegg.pdf')
+dotplot(kk3, showCategory=number, split = '.sign', font.size=6)
+dev.off()
+
+ridgeplot(kk3, showCategory = number, core_enrichment = F) + theme(axis.text.y = element_text(size = 8))
+
+#emapplot(pairwise_termsim(kk2))
+#cnetplot(kk2, categorySize="pvalue", color.params = list(foldChange = genes2), showCategory = 20)
+
+```
+```{r}
+
+
+mmsig <- msigdbr(species = "Mus musculus", category = 'H')
+
+h <- mmsig %>% dplyr::select(gs_name, gene_symbol)
+
+h3 <- GSEA(genes3, TERM2GENE = h, pAdjustMethod = 'none')
+
+pdf('../figures/CX3CR1KOvsWT_hallmark.pdf')
+dotplot(h3, showCategory=number, split = '.sign', font.size=6) 
+dev.off()
+
+ridgeplot(h3, showCategory = number, core_enrichment = F) + theme(axis.text.y = element_text(size = 8))
+
+#emapplot(pairwise_termsim(res))
+#cnetplot(res, categorySize="pvalue", color.params = list(foldChange = genes), showCategory = 20)
+```
+```{r}
+write.xlsx(list(GO = gse3@result, KEGG = kk3@result, Hallmarks =  h3@result), '../output/CX3CR1_KOvsWt_pathways.xlsx')
+```
+```{r}
+tt4 <- topTags(comps[[4]], Inf)$table
+#tt4 <- tt4[!rownames(tt4) == 'Satb1',]
+#genes <- tt4$logFC* -log10(tt4$FDR)
+
+#tt4 <- tt4[tt4$FDR < 0.1,]
+tt4 <- tt4[rowSums(cpm[rownames(tt4),13:16]>15)>=2,]
+
+genes4 <- tt4$logFC
+names(genes4) <- rownames(tt4)
+genes4 <- sort(genes4, decreasing = T)
+
+
+gse4 <- gseGO(geneList=genes4, 
+             ont ="ALL", 
+             keyType = "SYMBOL", 
+             #nPerm = 10000, 
+             minGSSize = 3, 
+             maxGSSize = 800, 
+             pvalueCutoff = 0.05, 
+             verbose = TRUE, 
+             OrgDb = org.Mm.eg.db, 
+             pAdjustMethod = "none")
+
+pdf('../figures/CD101KOvsWT_go.pdf')
+dotplot(gse4, showCategory=number, split = '.sign', font.size=6)
+dev.off()
+
+#emapplot(pairwise_termsim(gse))
+
+#cnetplot(gse, categorySize="pvalue", color.params = list(foldChange = genes), showCategory = 10)
+ridgeplot(gse4, showCategory = number, core_enrichment = F) + theme(axis.text.y = element_text(size = 8))
+```
+```{r}
+ids<-bitr(names(genes4), fromType = "SYMBOL", toType = "ENTREZID", OrgDb='org.Mm.eg.db')
+
+dedup_ids = ids[!duplicated(ids[c("SYMBOL")]),]
+
+genes4.2 <- genes4[names(genes4) %in% dedup_ids$SYMBOL]
+names(genes4.2) <- dedup_ids$ENTREZID 
+genes4.2<-na.omit(genes4.2)
+
+
+kk4 <- gseKEGG(geneList     = genes4.2,
+               organism     = 'mmu',
+               #nPerm        = 10000,
+               minGSSize    = 3,
+               maxGSSize    = 800,
+               pvalueCutoff = 0.05,
+               pAdjustMethod = "none",
+               keyType       = "ncbi-geneid")
+
+pdf('../figures/CD101KOvsWT_kegg.pdf')
+dotplot(kk4, showCategory=number, split = '.sign', font.size=6)
+dev.off()
+
+ridgeplot(kk4, showCategory = number, core_enrichment = F) + theme(axis.text.y = element_text(size = 8))
+
+#emapplot(pairwise_termsim(kk2))
+#cnetplot(kk2, categorySize="pvalue", color.params = list(foldChange = genes2), showCategory = 20)
+
+```
+```{r}
+mmsig <- msigdbr(species = "Mus musculus", category = 'H')
+
+h <- mmsig %>% dplyr::select(gs_name, gene_symbol)
+
+h4 <- GSEA(genes4, TERM2GENE = h, pAdjustMethod = 'none')
+pdf('../figures/CD101KOvsWT_hallmark.pdf')
+dotplot(h4, showCategory=number, split = '.sign', font.size=6)
+dev.off()
+ridgeplot(h4, showCategory = number, core_enrichment = F) + theme(axis.text.y = element_text(size = 8))
+
+#emapplot(pairwise_termsim(res))
+#cnetplot(res, categorySize="pvalue", color.params = list(foldChange = genes), showCategory = 20)
+```
+```{r}
+write.xlsx(list(GO = gse4@result, KEGG = kk4@result, Hallmarks =  h4@result), '../output/CD101_KOvsWt_pathways.xlsx')
+```
+
+
+```{r}
+tt5 <- topTags(comps[[5]], Inf)$table
+
+#tt1 <- tt1[tt1$FDR < 0.05 & abs(tt1$logFC) > 0.5, ]
+
+#genes <- tt1$logFC
+
+tt5 <- tt5[tt5$logCPM >1, ]
+#tt1 <- tt1[tt1$FDR < 0.1, ]
+#genes <- tt1$logFC * -log10(tt1$FDR)
+genes5 <- tt5$logFC
+names(genes5) <- rownames(tt5)
+genes5 <- sort(genes5, decreasing = T)
+
+
+gse <- gseGO(geneList=genes5, 
+             ont ="ALL", 
+             keyType = "SYMBOL", 
+             #nPerm = 10000, 
+             minGSSize = 3, 
+             maxGSSize = 800, 
+             pvalueCutoff = 0.05, 
+             verbose = TRUE, 
+             OrgDb = org.Mm.eg.db, 
+             pAdjustMethod = "none")
+
+pdf('../figures/KOvsWT_go.pdf')
+dotplot(gse, showCategory=number, split = '.sign', font.size=6)
+dev.off()
+
+#emapplot(pairwise_termsim(gse))
+
+#cnetplot(gse, categorySize="pvalue", color.params = list(foldChange = genes), showCategory = 10)
+ridgeplot(gse, showCategory = number, core_enrichment = F)  + theme(axis.text.y = element_text(size = 8))
+```
+
+
+```{r}
+ids<-bitr(names(genes5), fromType = "SYMBOL", toType = "ENTREZID", OrgDb='org.Mm.eg.db')
+
+dedup_ids = ids[!duplicated(ids[c("SYMBOL")]),]
+
+genes5.2 <- genes5[names(genes5) %in% dedup_ids$SYMBOL]
+names(genes5.2) <- dedup_ids$ENTREZID 
+genes5.2<-na.omit(genes5.2)
+
+
+kk5 <- gseKEGG(geneList     = genes5.2,
+               organism     = 'mmu',
+               #nPerm        = 10000,
+               minGSSize    = 3,
+               maxGSSize    = 800,
+               pvalueCutoff = 0.05,
+               pAdjustMethod = "none",
+               keyType       = "ncbi-geneid")
+
+pdf('../figures/KOvsWT_kegg.pdf')
+dotplot(kk5, showCategory=number, split = '.sign', font.size=6)
+dev.off()
+
+ridgeplot(kk5, showCategory = number, core_enrichment = F) + theme(axis.text.y = element_text(size = 8))
+
+#emapplot(pairwise_termsim(kk5))
+#cnetplot(kk5, categorySize="pvalue", color.params = list(foldChange = genes2), showCategory = 20)
+```
+
+```{r}
+mmsig <- msigdbr(species = "Mus musculus", category = 'H')
+
+h <- mmsig %>% dplyr::select(gs_name, gene_symbol)
+
+h5 <- GSEA(genes5, TERM2GENE = h, pAdjustMethod = 'none')
+
+pdf('../figures/KOvsWT_hallmark.pdf')
+dotplot(h5, showCategory=number, split = '.sign', font.size=6)
+dev.off()
+
+ridgeplot(h5, showCategory = number, core_enrichment = F) + theme(axis.text.y = element_text(size = 8))
+
+#emapplot(pairwise_termsim(res))
+#cnetplot(res, categorySize="pvalue", color.params = list(foldChange = genes), showCategory = 20)
+```
+GO:0000070	
+GO:0007093	
+GO:0090068	
+GO:0010948	
+GO:0006260	
+GO:0051276	
+GO:0051301	
+```{r}
+path <- c('GO:0000070','GO:0007093','GO:0090068','GO:0010948','GO:0006260','GO:0051276','GO:0051301','GO:0002181','GO:0022626','GO:1902749','	GO:0000086','mmu03010','mmu04110','mmu03030','mmu04151','HALLMARK_G2M_CHECKPOINT','HALLMARK_MITOTIC_SPINDLE')
+
+g1 <- gse1@result[,c(2,3,4,6,7)]
+g1$Description <- paste('GO', g1$Description)
+k1 <- kk1@result[,c(1,2,3,5,6)]
+k1$Description <- paste('KEGG', k1$Description)
+hh1 <-  h1@result[,c(1,2,3,5,6)]
+#hh1$Description <- paste('Hallmark', hh1$Description)
+data1 <- rbind(g1, k1, hh1)
+
+g2 <- gse2@result[,c(2,3,4,6,7)]
+g2$Description <- paste('GO', g2$Description)
+k2 <- kk2@result[,c(1,2,3,5,6)]
+k2$Description <- paste('KEGG', k2$Description)
+hh2 <-  h2@result[,c(1,2,3,5,6)]
+#hh2$Description <- paste('Hallmark', hh2$Description)
+data2 <- rbind(g2, k2, hh2)
+
+
+data1$Description <- paste('CD62L+:', data1$Description)
+data2$Description <- paste('CD62L-:', data2$Description)
+
+data <- rbind(data1[data1$ID %in% path,] ,data2[data2$ID %in% path,])
+data <- data[data$pvalue < 0.01,]
+
+p <- ggplot(data, aes(NES, Description))
+p <- p + geom_point(aes(colour=pvalue, size=setSize)) +
+    scale_color_gradientn(colours=rainbow(4), limits=c(0, 0.006)) +
+    geom_vline(xintercept=0, size=0.5, colour="gray50") +
+    theme(panel.background=element_rect(fill="gray95", colour="gray95"),
+          panel.grid.major=element_line(size=0.25,linetype='solid', colour="gray90"), 
+          panel.grid.minor=element_line(size=0.25,linetype='solid', colour="gray90"),
+          axis.title.y=element_blank()) +
+    expand_limits(x=c(-3,3)) +
+    scale_x_continuous(breaks=c(-3,-2,-1,0,1,2,3))
+
+pdf('../figures/pathways_bubble.pdf')
+p
+dev.off()
+```
+

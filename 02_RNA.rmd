@@ -1,0 +1,484 @@
+---
+title: "01_QC.rmd"
+author: "Lachlan Dryburgh"
+date: "2024-07-25"
+output: html_document
+---
+
+```{r}
+library(dplyr)
+library(tidyverse)
+library(edgeR)
+library(ggplot2)
+library(ggrepel)
+library(viridis)
+library(openxlsx)
+```
+
+
+Sample 1: WT CD62L+ TPEX
+Sample 2: WT CD62L- TPEX
+Sample 3: WT CX3CR1+ TEX 
+Sample 4: WT CD101+ TEX
+Sample 5: KO CD62L+ TPEX
+Sample 6: KO CD62L- TPEX
+Sample 7: KO CX3CR1+ TEX 
+Sample 8: KO CD101+ TEX
+Sample 9: WT CD62L+ TPEX
+Sample 10: WT CD62L- TPEX
+Sample 11: WT CX3CR1+ TEX 
+Sample 12: WT CD101+ TEX
+Sample 13: KO CD62L+ TPEX
+Sample 14: KO CD62L- TPEX
+Sample 15: KO CX3CR1+ TEX 
+Sample 16: KO CD101+ TEX
+```{r}
+counts <- read.table('../data/RNA/table_bulk_RNA_Leonie', header = T)
+
+names(counts) <- names(counts) %>% gsub('.PE.starAligned.sortedByCoord.out.bam', '' , .) %>% gsub('...align..', '', .)
+names(counts) <- sub('_(.*)$', '', names(counts))
+
+counts <- counts[-grep('^Tr[ab][vdj]' ,counts$Geneid),]
+
+c <- counts[,as.character(1:16)]
+sum(duplicated(c$Geneid))
+
+
+rownames(c) <- counts$Geneid
+
+dge <- DGEList(c)
+
+dge$samples
+
+
+
+dge$samples$group <- c('WT CD62L_pos','WT CD62L_neg','WT CX3CR1','WT CD101','KO CD62L_pos','KO CD62L_neg','KO CX3CR1', 'KO CD101', 'WT CD62L_pos','WT CD62L_neg','WT CX3CR1','WT CD101','KO CD62L_pos','KO CD62L_neg','KO CX3CR1','KO CD101')
+dge$samples$KO <- gsub("( .*)$", '', dge$samples$group)
+dge$samples$group <- sub(' ' , '_', dge$samples$group)
+
+
+dge$samples$Ex <- c("TPEX","TPEX", 'TEX', 'TEX', "TPEX","TPEX", 'TEX', 'TEX', "TPEX","TPEX", 'TEX', 'TEX', "TPEX","TPEX",'TEX', 'TEX')
+dge$samples$batch <- c(rep('1',8), rep('2',8))
+```
+
+```{r}
+keep <- filterByExpr(dge, min.count = 200, min.total.count = 300, group = dge$samples$group)
+#keep <- filterByExpr(dge)
+summary(keep)
+dge <- dge[keep,,keep.lib.sizes = F]
+
+dge <- calcNormFactors(dge)
+
+dge
+```
+
+```{r}
+cpm <- edgeR::cpm(dge, log = T)
+
+pca <- prcomp(t(cpm))
+
+pca$x %>% as_tibble() %>%
+    cbind(dge$samples) %>%
+    ggplot(aes(PC1, PC2)) +
+    geom_point(aes_string(color = "group")) +
+    geom_text_repel(aes(label = group, color = group)) +
+    #scale_color_viridis(discrete=TRUE, option="turbo") +
+    theme_light()
+
+pca$x %>% as_tibble() %>%
+    cbind(dge$samples) %>%
+    ggplot(aes(PC1, PC2)) +
+    geom_point(aes_string(color = 'KO')) +
+    geom_text_repel(aes(label = group, color = KO)) +
+    #scale_color_viridis(discrete=TRUE, option="turbo") +
+    theme_light()
+
+pca$x %>% as_tibble() %>%
+    cbind(dge$samples) %>%
+    ggplot(aes(PC1, PC2)) +
+    geom_point(aes_string(color = "Ex")) +
+    geom_text_repel(aes(label = group, color = Ex)) +
+    #scale_color_viridis(discrete=TRUE, option="turbo") +
+    theme_light()
+
+pca$x %>% as_tibble() %>%
+    cbind(dge$samples) %>%
+    ggplot(aes(PC1, PC2)) +
+    geom_point(aes_string(color = "batch")) +
+    geom_text_repel(aes(label = group, color = batch)) +
+    #scale_color_viridis(discrete=TRUE, option="turbo") +
+    theme_light()
+```
+
+```{r}
+cpm_b <- removeBatchEffect(cpm(dge, log=T), batch = dge$samples$batch)
+pca = prcomp(t(cpm_b))
+
+
+
+pca$x %>% as_tibble(rownames = "sample") %>% 
+  mutate(KO = dge$samples$KO) %>% 
+  mutate(Ex = dge$samples$Ex) %>% 
+  mutate(batch = dge$samples$batch) %>% 
+  mutate(group = dge$samples$group) -> d
+
+ggplot(d,aes(PC1,PC2, color = KO)) +
+  geom_point() + geom_text_repel(aes(label = KO))
+  
+ggplot(d,aes(PC1,PC2, color = Ex)) +
+  geom_point() + geom_text_repel(aes(label = Ex))
+
+ggplot(d,aes(PC1,PC2, color = batch)) +
+  geom_point() + geom_text_repel(aes(label = batch))
+
+ggplot(d,aes(PC1,PC2, color = group)) +
+  geom_point() + geom_text_repel(aes(label = group))
+```
+KO CX3CR1','KO CD101
+```{r}
+c <- cpm(dge, log =F)
+#saveRDS(c, '../output/cpm.rds')
+
+f <- rowSums(c>15)>=2
+dge <- dge[f,,keep.lib.size = F]
+
+summary(f)
+
+dge <- calcNormFactors(dge)
+
+
+g <- dge$samples$group
+batch <- dge$samples$batch
+
+mod <- model.matrix(~0+g+batch)
+colnames(mod) <- gsub('^g', '', colnames(mod))
+
+y <- estimateDisp(dge, mod, robust = T)
+fit <- glmFit(y, mod)
+
+v <- voom(dge, mod, plot=TRUE)
+
+#fit2<- lmFit(v, design = mod)
+
+
+
+
+contr <-  makeContrasts("CD62L_posKOvsWt" = "KO_CD62L_pos - WT_CD62L_pos",
+                                                   "CD62L_negKOvsWt" = "KO_CD62L_neg - WT_CD62L_neg",
+                                                   "CX3CR1_KOvsWt" = "KO_CX3CR1 - WT_CX3CR1",
+                                                   "CD101_KOvsWt" = "KO_CD101 - WT_CD101",
+                                                   "KO_vs_Wt" = "(KO_CD62L_pos + KO_CD62L_neg + KO_CX3CR1 + KO_CD101) - (WT_CD62L_pos + WT_CD62L_neg + WT_CX3CR1 + WT_CD101)",
+                                                    "CD62L_pos_vs_neg_Wt" = "WT_CD62L_pos - WT_CD62L_neg",
+                                                    "CX3CR1_vs_CD101_Wt" = "WT_CX3CR1 - WT_CD101",
+                                                    "TPEX_vs_TEX_Wt" = "(WT_CD62L_pos + WT_CD62L_neg)/2 - (WT_CX3CR1 + WT_CD101)/2",
+                                                   levels = mod)
+#fit2 <- contrasts.fit(fit2, contrasts = contr)
+#fit2 <- eBayes(fit2)
+
+```
+```{r}
+comps <- list()
+i <- 1
+  for (comp in colnames(contr)) {
+  res <- glmLRT(fit, contrast = as.vector(contr[,comp]))
+  comps[[i]] <- res
+  i <- i+1
+}
+names(comps) <- colnames(contr)
+
+lapply(comps, FUN = function(x) summary(decideTests.DGELRT(x)))
+
+
+```
+```{r}
+cpm <- as.data.frame(cpm(dge, log =F))
+
+names(cpm) <- dge$samples$group
+
+cpm<-cpm[c(1,9,5,13,2,10,6,14,3,11,7,15,4,12,8,16)]
+write.xlsx(cpm, '../output/normalizedcounts_filtered.xlsx', rowNames = T)
+write.csv(cpm, '../output/cpm.csv', row.names = T)
+saveRDS(cpm, '../output/cpm.rds')
+```
+
+```{r}
+tt1 <- topTags(comps[[1]], n = Inf, adjust.method = 'fdr')$table
+tt2 <- topTags(comps[[2]], n = Inf)$table
+tt3 <- topTags(comps[[3]], n = Inf)$table
+tt4 <- topTags(comps[[4]], n = Inf)$table
+tt5 <- topTags(comps[[5]], n = Inf)$table
+
+tt1 <- tt1[rowSums(cpm[rownames(tt1),1:4]>15)>=2,]
+tt2 <- tt2[rowSums(cpm[rownames(tt2),5:8]>15)>=2,]
+tt3 <- tt3[rowSums(cpm[rownames(tt3),9:12]>15)>=2,]
+tt4 <- tt4[rowSums(cpm[rownames(tt4),13:16]>15)>=2,]
+
+
+saveRDS(comps, '../output/comps.rds')
+
+library(openxlsx)
+
+write.xlsx(list('CD62L+_KOvsWt' = tt1, 'CD62L-_KOvsWt' = tt2, 'CXCR1_KOvsWt' = tt3, 'CD101_KOvsWt' = tt4, 'KOvsWt' = tt5), '../output/Leonie_bulk_rna_deg.xlsx', rowNames = T)
+
+LFC <- 0
+FDR <- 0.1
+
+tt1_co <- tt1[tt1$FDR < FDR & abs(tt1$logFC) > LFC,]
+tt2_co <- tt2[tt2$FDR < FDR & abs(tt2$logFC) > LFC,]
+tt3_co <- tt3[tt3$FDR < FDR & abs(tt3$logFC) > LFC,]
+tt4_co <- tt4[tt4$FDR < FDR & abs(tt4$logFC) > LFC,]
+tt5_co <- tt5[tt5$FDR < FDR & abs(tt5$logFC) > LFC,]
+
+write.xlsx(list('CD62L+_KOvsWt' = tt1_co, 'CD62L-_KOvsWt' = tt2_co, 'CXCR1_KOvsWt' = tt3_co, 'CD101_KOvsWt' = tt4_co), '../output/Leonie_bulk_rna_deg_cuttoff.xlsx', rowNames = T)
+```
+```{r}
+
+genes <- rownames(head(tt1[tt1$FDR < 0.05,],30))
+
+
+
+pdf('../figures/deg_heatmap_groups_CD62L_posKOvsWt.pdf')
+pheatmap::pheatmap(fit$coefficients[genes,c(1,5,4,8,2,6,3,7)], cluster_cols = F, scale = 'row')
+dev.off()
+
+library(EnhancedVolcano)
+
+pdf('../figures/volcano_degs_CD62L_posKOvsWt.pdf')
+EnhancedVolcano(toptable = tt1, lab = rownames(tt1), x = 'logFC', y = 'FDR', pCutoff = 0.05,  FCcutoff = 0.5, title = 'CD62L+: KO vs Wt', max.overlaps = 20, drawConnectors = F, ylim = c(0,15), xlim = c(-4,4))
+dev.off()
+
+
+# EnhancedVolcano(toptable = tt1_l, lab = rownames(tt1), x = 'logFC', y = 'adj.P.Val', pCutoff = 0.05, title = 'CD62L+: KO vs Wt', max.overlaps = 20, drawConnectors = F, xlim = c(-5,5), ylim = c(0,7))
+```
+
+```{r}
+
+genes <- rownames(head(tt2[tt2$FDR < 0.05,],30))
+
+
+
+pdf('../figures/deg_heatmap_groups_CD62L_negKOvsWt.pdf')
+  pheatmap::pheatmap(fit$coefficients[genes,c(1,5,4,8,2,6,3,7)], cluster_cols = F, scale = 'row')
+dev.off()
+
+library(EnhancedVolcano)
+
+pdf('../figures/volcano_degs_CD62L_negKOvsWt.pdf')
+EnhancedVolcano(toptable = tt2, lab = rownames(tt2), x = 'logFC', y = 'FDR', pCutoff = 0.05,  FCcutoff = 0.5, title = 'CD62L-: KO vs Wt', max.overlaps = 20, drawConnectors = F)
+dev.off()
+
+
+```
+```{r}
+
+genes <- rownames(head(tt3[tt3$FDR < 0.05,],30))
+
+
+pdf('../figures/deg_heatmap_groups_CX3CR1_KOvsWt.pdf')
+pheatmap::pheatmap(fit$coefficients[genes,c(1,5,4,8,2,6,3,7)], cluster_cols = F, scale = 'row')
+dev.off()
+
+library(EnhancedVolcano)
+
+pdf('../figures/volcano_degs_CX3CR1_KOvsWt.pdf')
+EnhancedVolcano(toptable = tt3, lab = rownames(tt3), x = 'logFC', y = 'FDR', pCutoff = 0.05,  FCcutoff = 0.5, title = 'CX3CR1+: KO vs Wt', max.overlaps = 20, drawConnectors = F)
+dev.off()
+
+```
+
+```{r}
+
+genes <- rownames(head(tt4[tt4$FDR < 0.05,],30))
+
+
+
+pdf('../figures/deg_heatmap_groups_CD101_KOvsWt.pdf')
+  pheatmap::pheatmap(fit$coefficients[genes,c(1,5,4,8,2,6,3,7)], cluster_cols = F, scale = 'row')
+dev.off()
+
+library(EnhancedVolcano)
+
+pdf('../figures/volcano_degs_CD101_KOvsWt.pdf')
+EnhancedVolcano(toptable = tt4, lab = rownames(tt4), x = 'logFC', y = 'FDR', pCutoff = 0.05,  FCcutoff = 0.5, title = 'CD101+: KO vs Wt', max.overlaps = 20, drawConnectors = F)
+dev.off()
+
+
+EnhancedVolcano(toptable = tt5, lab = rownames(tt5), x = 'logFC', y = 'FDR', pCutoff = 0.05,  FCcutoff = 0.5, title = 'KO vs Wt', max.overlaps = 20, drawConnectors = F)
+```
+
+```{r}
+fc_limit = 0
+plim = 0.1
+
+up <- tt1[tt1$FDR < plim & tt1$logFC > fc_limit,]
+up$gene <- rownames(up)
+down <- tt1[tt1$FDR < plim & tt1$logFC < -fc_limit,]
+down$gene <- rownames(down)
+
+#lcpm <- rowMeans(cpm[rownames(tt1),1:4])
+#tt1$logCPM <- lcpm
+
+pdf('../figures/CD62Lp_MAplot.pdf')
+ggplot(tt1, aes(x = logCPM, y = logFC)) + geom_point(color = 'grey')  +  geom_point(data = up, aes(x = logCPM, y = logFC), color = 'red') + geom_point(data = down, aes(x = logCPM, y = logFC), color = 'blue') + labs(title="CD62L+: KO vs Wt DEGs") + geom_text_repel(data = down, aes(label = gene)) + geom_text_repel(data = up, aes(label = gene))
+dev.off()
+
+up <- tt2[tt2$FDR < plim & tt2$logFC > fc_limit,]
+up$gene <- rownames(up)
+down <- tt2[tt2$FDR < plim & tt2$logFC < -fc_limit,]
+down$gene <- rownames(down)
+
+pdf('../figures/CD62Ln_MAplot.pdf')
+ggplot(tt2, aes(x = logCPM, y = logFC)) + geom_point(color = 'grey')  +  geom_point(data = up, aes(x = logCPM, y = logFC), color = 'red') + geom_point(data = down, aes(x = logCPM, y = logFC), color = 'blue') + labs(title="CD62L-: KO vs Wt DEGs") + geom_text_repel(data = down, aes(label = gene)) + geom_text_repel(data = up, aes(label = gene)) 
+dev.off()
+
+up <- tt3[tt3$FDR < plim & tt3$logFC > fc_limit,]
+up$gene <- rownames(up)
+down <- tt3[tt3$FDR < plim & tt3$logFC < -fc_limit,]
+down$gene <- rownames(down)
+
+pdf('../figures/CX3CR1_MAplot.pdf')
+ggplot(tt3, aes(x = logCPM, y = logFC)) + geom_point(color = 'grey')  +  geom_point(data = up, aes(x = logCPM, y = logFC), color = 'red') + geom_point(data = down, aes(x = logCPM, y = logFC), color = 'blue') + labs(title="CX3CR1+: KO vs Wt DEGs") + geom_text_repel(data = down, aes(label = gene)) + geom_text_repel(data = up, aes(label = gene))
+dev.off()
+
+
+up <- tt4[tt4$FDR < plim & tt4$logFC > fc_limit,]
+up$gene <- rownames(up)
+down <- tt4[tt4$FDR < plim & tt4$logFC < -fc_limit,]
+down$gene <- rownames(down)
+
+pdf('../figures/CD101_MAplot.pdf')
+ggplot(tt4, aes(x = logCPM, y = logFC)) + geom_point(color = 'grey')  +  geom_point(data = tt4[tt4$FDR < 0.05 & tt4$logFC > 0.5,], aes(x = logCPM, y = logFC), color = 'red') + geom_point(data = tt4[tt4$FDR < 0.05 & tt4$logFC < -0.5,], aes(x = logCPM, y = logFC), color = 'blue') + labs(title="CD101+: KO vs Wt DEGs")  + geom_text_repel(data = down, aes(label = gene)) + geom_text_repel(data = up, aes(label = gene))
+dev.off()
+
+up <- tt5[tt5$FDR < plim & tt5$logFC > fc_limit,]
+up$gene <- rownames(up)
+down <- tt5[tt5$FDR < plim & tt5$logFC < -fc_limit,]
+down$gene <- rownames(down)
+
+pdf('../figures/Pooled_MAplot.pdf')
+ggplot(tt5, aes(x = logCPM, y = logFC)) + geom_point(color = 'grey')  +  geom_point(data = up, aes(x = logCPM, y = logFC), color = 'red') + geom_point(data = down, aes(x = logCPM, y = logFC), color = 'blue') + labs(title="Pooled: KO vs Wt DEGs")  + geom_text_repel(data = down, aes(label = gene)) + geom_text_repel(data = up, aes(label = gene))
+dev.off()
+
+```
+
+
+```{r}
+genes_down <- rownames(tt5[tt5$logFC < -1 & tt5$FDR < 0.05, ])
+genes_up <- rownames(tt5[tt5$logFC > 1 & tt5$FDR < 0.05, ])
+
+
+atac <- read.table('../output/atac_peaks_annot_lfc.bed')
+
+atac[atac$V12 %in% genes, 'V19']
+
+#plot(atac[atac$V12 %in% genes_down, 'V14'])
+#plot(atac[atac$V12 %in% genes_up, 'V14'])
+```
+
+
+```{r}
+FDR <- 0.1
+LFC <- 0.5
+
+genes1 <- rownames(tt1[tt1$FDR < FDR & abs(tt1$logFC) > LFC,])
+genes2 <- rownames(tt2[tt2$FDR < FDR & abs(tt2$logFC) > LFC,])
+genes3 <- rownames(tt3[tt3$FDR < FDR & abs(tt3$logFC) > LFC,])
+genes4 <- rownames(tt4[tt4$FDR < FDR & abs(tt4$logFC) > LFC,])
+genes5 <- rownames(tt5[tt5$FDR < FDR & abs(tt5$logFC) > LFC,])
+
+all_genes <- unique(c(genes1, genes2, genes3, genes4))
+#all_genes <- unique(c(genes1, genes2, genes3, genes4, genes5))
+
+
+library(ComplexHeatmap)
+
+z <- t(scale(t(cpm)))
+#pheatmap::pheatmap(t(z[all_genes,c(7,3,6,2,8,4,5,1)]), cluster_cols = T, cluster_rows = F, scale = 'column',  fontsize_col =  3, color=colorRampPalette(c("navy", "white", "red"))(50))
+
+#ComplexHeatmap:: pheatmap(fit$coefficients[all_genes2,c(7,3,6,2,8,4,5,1)], cluster_cols = F,  scale = 'row', fontsize_row = 3, color=colorRampPalette(c("navy", "white", "red"))(50), )
+library(scales)
+
+s <- apply(t(fit$coefficients[all_genes,c(7,3,6,2,8,4,5,1)]), MARGIN = 2, FUN = rescale, to = c(-2,2))
+
+
+pheatmap::pheatmap(s, cluster_cols = T, cluster_rows = F, scale = 'none',  fontsize_col =  3,  treeheight_col = 0)
+
+pdf('../figures/deg_heatmap_all_degs.pdf')
+pheatmap::pheatmap(t(fit$coefficients[all_genes,c(7,3,6,2,8,4,5,1)]), cluster_cols = T, cluster_rows = F, scale = 'column',  fontsize_col =  3, color=colorRampPalette(c("navy", "white", "red"))(50), treeheight_col = 0)
+dev.off()
+
+pdf('../figures/deg_heatmap_all_degs_hard_scale.pdf', width = 14, height = 3)
+pheatmap::pheatmap(s, cluster_cols = T, cluster_rows = F, scale = 'none',  fontsize_col =  4,  treeheight_col = 0)
+dev.off()
+```
+```{r}
+tpex_genes <- unique(c(genes1, genes2))
+
+ch<- cpm_b[tpex_genes, c(1,9,5,13,2,10,6,14)]
+colnames(ch) <- c('CD62L+ WT 1', 'CD62L+ WT 2', 'CD62L+ KO 1', 'CD62L+ KO 2', 'CD62L- WT 1', 'CD62L- WT 2', 'CD62L- KO 1', 'CD62L- KO 2' )
+
+
+pheatmap(ch, scale = 'row', treeheight_col = 0, cluster_cols = F)
+
+s <- t(apply(t(ch), MARGIN = 2, FUN = rescale, to = c(-2,2)))
+
+pdf('../figures/Tpex_heatmap.pdf')
+pheatmap(s, scale = F, treeheight_col = 0, cluster_cols = F, fontsize= 6)
+dev.off()
+```
+```{r}
+tex_genes <- unique(c(genes3, genes4))
+
+ch<- cpm_b[tex_genes, c(3,11,7,15,4,12,8,16)]
+colnames(ch) <- c('CX3CR1+ WT 1', 'CX3XR1+ WT 2', 'CX3CR1+ KO 1', 'CX3CR1+ KO 2', 'CD101+ WT 1', 'CD101+ WT 1', 'CD101+ KO 1', 'CD101+ KO 2' )
+
+
+pheatmap(ch, scale = 'row', treeheight_col = 0, cluster_cols = F)
+
+s <- t(apply(t(ch), MARGIN = 2, FUN = rescale, to = c(-2,2)))
+
+pdf('../figures/TEX_heatmap.pdf')
+pheatmap(s, scale = F, treeheight_col = 0, cluster_cols = F, fontsize = 6)
+dev.off()
+```
+
+```{r}
+fc <- 0.5
+
+genes1 <- rownames(tt1[tt1$FDR < 0.05 & abs(tt1$logFC) > fc,])
+genes2 <- rownames(tt2[tt2$FDR < 0.05 & abs(tt2$logFC) > fc,])
+genes3 <- rownames(tt3[tt3$FDR < 0.05 & abs(tt3$logFC) > fc,])
+genes4 <- rownames(tt4[tt4$FDR < 0.05 & abs(tt4$logFC) > fc,])
+genes5 <- rownames(tt5[tt5$FDR < 0.05 & abs(tt5$logFC) > fc,])
+
+all_genes <- unique(c(genes1, genes2, genes3, genes4))
+all_genes2 <- unique(c(genes1, genes2, genes3, genes4, genes5))
+
+
+write.xlsx(list('CD62L+_KOvsWt' = tt1[genes1,], 'CD62L-_KOvsWt' = tt2[genes2,], 'CXCR1_KOvsWt' = tt3[genes3,], 'CD101_KOvsWt' = tt4[genes4,]), '../output/Leonie_bulk_rna_deg_cuttoff_filtered.xlsx', rowNames = T)
+
+length(all_genes)
+
+length(all_genes2)
+
+z <- t(scale(t(cpm)))
+#pheatmap::pheatmap(t(z[all_genes,c(7,3,6,2,8,4,5,1)]), cluster_cols = T, cluster_rows = F, scale = 'column',  fontsize_col =  3, color=colorRampPalette(c("navy", "white", "red"))(50))
+
+#ComplexHeatmap:: pheatmap(fit$coefficients[all_genes2,c(7,3,6,2,8,4,5,1)], cluster_cols = F,  scale = 'row', fontsize_row = 3, color=colorRampPalette(c("navy", "white", "red"))(50), )
+library(scales)
+
+s <- apply(t(fit$coefficients[all_genes,c(7,3,6,2,8,4,5,1)]), MARGIN = 2, FUN = rescale, to = c(-2,2))
+
+
+pheatmap::pheatmap(s, cluster_cols = T, cluster_rows = F, scale = 'none',  fontsize_col =  3,  treeheight_col = 0)
+
+pdf('../figures/deg_heatmap_all_degs_filtered.pdf')
+pheatmap::pheatmap(t(fit$coefficients[all_genes,c(7,3,6,2,8,4,5,1)]), cluster_cols = T, cluster_rows = F, scale = 'column',  fontsize_col =  6, color=colorRampPalette(c("navy", "white", "red"))(50), treeheight_col = 0)
+dev.off()
+
+pdf('../figures/deg_heatmap_all_degs_hard_scale_filtered.pdf', width = 14, height = 3)
+pheatmap::pheatmap(s, cluster_cols = T, cluster_rows = F, scale = 'none',  fontsize_col =  10,  treeheight_col = 0)
+dev.off()
+```
+
+
