@@ -7,6 +7,7 @@ date: "2024-08-07"
 output: html_document
 ---
 
+Read samples and Annotations
 ```{r}
 library(openxlsx)
 library(edgeR)
@@ -28,13 +29,10 @@ names(counts)[7:22] <- c('10', '11', '12', '13', '1', '14' , '15', '16',  '2', '
 annot <- read.table('../peaks_annot.bed')
 annot <- annot[c(1:3,5,4,23:27)]
 names(annot) <- c('Chr', 'Start', 'End', 'Peak.id', 'strand', 'gene_chr', 'gene_start', 'gene_end', 'gene.id', 'distance')
-
-
-#annot <- read.table('../merged_q10_annotated.bed')
-#names(annot) <- c('Chr', 'Start', 'End', 'Peak.id', 'strand', 'score', 'sample', 'sample_count',  'gene_chr', 'gene_start', 'gene_end', 'gene.id', 'distance')
-#names(annot)[7:11]<-c('KO1', 'KO2', 'GFP1', 'GFP2', 'GFP3')
 ```
 
+
+Add Sample groups 
 ```{r}
 dge = DGEList(counts[,c(7:22)], genes = counts$Peak.id)
 
@@ -48,10 +46,14 @@ dge$samples$batch <- as.factor(c(2,2,2,2,1,2,2,2,1,1,1,1,1,1,1,2))
 
 dge$samples$group <- paste(dge$samples$Type , dge$samples$KO, sep = '_')
 
+
+#Trimmed Mean Normalization
 dge = calcNormFactors(dge)
 
 plotMDS(dge)
 ```
+
+Check Sample clustering
 ```{r}
 pca = prcomp(t(cpm(dge, log=T)))
 
@@ -77,6 +79,8 @@ ggplot(d,aes(PC1,PC2, color = batch)) +
 ggplot(d,aes(PC1,PC2, color = group)) +
   geom_point() + geom_text_repel(aes(label = group))
 ```
+
+Remove low count peaks, read claculate nomalization factors
 ```{r}
 cpm <- cpm(dge, log=T)
 
@@ -98,6 +102,8 @@ dge_f <- dge[mx >-1,]
 
 dge_f = calcNormFactors(dge_f)
 ```
+
+Check clustering with batch effect removed
 ```{r}
 cpm_b <- removeBatchEffect(cpm(dge_f, log=T), batch = dge_f$samples$batch)
 pca = prcomp(t(cpm_b))
@@ -127,7 +133,8 @@ ggplot(d,aes(PC1,PC2, color = group)) +
   geom_point() + geom_text_repel(aes(label = group))
 ```
 
-
+Fit linear model, with batch as additional co-variate 
+Test and summarise for signficant peaks
 ```{r}
 group <- dge_f$samples$group
 batch <- dge_f$samples$batch
@@ -183,9 +190,7 @@ write.table(up[,1:3], '../output/ko_pos_peaks.bed', row.names = F, col.names = F
 write.table(down[,1:3], '../output/ko_neg_peaks.bed', row.names = F, col.names = F, quote = F, sep = '\t')
 write.table(both, '../output/equal_peaks.bed',  row.names = F, col.names = F, quote = F)
 ```
-```{r}
 
-```
 
 ```{r}
 write.csv(up_anno, '../output/ko_up_peaks_fdr0_1.csv', row.names = F)
@@ -193,14 +198,8 @@ write.csv(down_anno, '../output/ko_down_peaksfdr0_1.csv', row.names = F)
 
 up_anno[order(up_anno$logFC, decreasing = T),]
 down_anno[order(down_anno$logFC, decreasing = F),]
-
-
-
 ```
-```{r}
 
-
-```
 
 ```{r}
 tt_CD62_pos<-topTable(fit, coef = 1, number = Inf)

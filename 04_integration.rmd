@@ -5,6 +5,7 @@ date: "2024-09-03"
 output: html_document
 ---
 
+Comparing ChIP-Seq , ATAC-Seq, RNA-Sequencing for a
 ```{r}
 library(edgeR)
 library(VennDiagram)
